@@ -1,21 +1,17 @@
 import streamlit as st
 import os
-import platform # This is the new "Detective" tool 🕵️‍♂️
+import platform
+from docx import Document
+from io import BytesIO
 from langchain_groq import ChatGroq
 from langchain_community.chat_models import ChatOllama
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from pypdf import PdfReader
-from docx import Document
-from io import BytesIO
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="PhD Research Assistant", page_icon="🎓", layout="wide")
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "vector_store" not in st.session_state:
-    st.session_state.vector_store = None
 
 # --- CUSTOM CSS ---
 st.markdown("""
@@ -28,24 +24,28 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
+
+# --- 1. INITIALIZE SESSION STATE ---
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "vector_store" not in st.session_state:
+    st.session_state.vector_store = None
+
+# --- 2. HELPER FUNCTIONS ---
 def create_docx(messages):
     doc = Document()
-    doc.add_heading('PhD Research Session', 0)
-    
+    doc.add_heading('Research Session Report', 0)
     for msg in messages:
-        # Clean up the role name (e.g., "user" -> "You", "assistant" -> "AI")
-        role = "You" if msg["role"] == "user" else "AI Researcher"
+        role = "User" if msg["role"] == "user" else "AI Assistant"
         doc.add_heading(role, level=2)
         doc.add_paragraph(msg["content"])
-        doc.add_paragraph("-" * 20) # Divider
-    # Save to a memory buffer (not a file on disk)
+        doc.add_paragraph("-" * 20)
     buffer = BytesIO()
     doc.save(buffer)
     buffer.seek(0)
     return buffer
-# --- SIDEBAR CONFIG ---
-# --- SIDEBAR CONFIG ---
-# --- SIDEBAR CONFIG ---
+
+# --- 3. SIDEBAR CONFIG ---
 with st.sidebar:
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
@@ -55,7 +55,7 @@ with st.sidebar:
     st.title("Settings")
     st.write("Built by **Rohit Goswami**") 
     
-    # Mode Selection (Mac vs Cloud)
+    # Mode Selection
     os_name = platform.system()
     mode_options = ["☁️ Cloud (Speed)"]
     if os_name == "Darwin":
@@ -72,13 +72,13 @@ with st.sidebar:
     
     st.divider()
     
-    # BUTTON 1: Clear Memory (Resets the chat)
+    # BUTTON 1: Clear Memory
     if st.button("🗑️ Clear Chat History"):
         st.session_state.messages = []
         st.session_state.vector_store = None
         st.rerun()
 
-    # BUTTON 2: Download Report (Saves the chat)
+    # BUTTON 2: Download Report
     if st.session_state.messages:
         docx_file = create_docx(st.session_state.messages)
         st.download_button(
@@ -88,50 +88,54 @@ with st.sidebar:
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
 
-# --- APP LOGIC ---
+# --- 4. APP LOGIC ---
 st.title("🎓 Private PhD Assistant")
-st.markdown("##### Upload your thesis, manuals, or papers and chat with them.")
+st.markdown("##### Upload multiple thesis chapters, papers, or manuals.")
 
+# UPDATED: Accept Multiple Files
+uploaded_files = st.file_uploader(
+    "Upload PDF(s)", 
+    type="pdf", 
+    label_visibility="collapsed", 
+    accept_multiple_files=True 
+)
 
-
-# 1. File Upload
-uploaded_file = st.file_uploader("Upload PDF", type="pdf", label_visibility="collapsed")
-
-if uploaded_file and st.session_state.vector_store is None:
-    with st.spinner("🧠 Reading & Indexing Document..."):
-        pdf_reader = PdfReader(uploaded_file)
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text()
-        # OLD: chunk_overlap=200
-        # NEW: chunk_overlap=500 (Preserves more context between cuts)    
+# Process files loop
+if uploaded_files and st.session_state.vector_store is None:
+    with st.spinner(f"🧠 Reading {len(uploaded_files)} documents..."):
+        all_text = ""
+        for uploaded_file in uploaded_files:
+            pdf_reader = PdfReader(uploaded_file)
+            for page in pdf_reader.pages:
+                all_text += page.extract_text()
+            
+        # Updated Text Splitter with Overlap
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1200, chunk_overlap=500, length_function=len)
-        chunks = text_splitter.split_text(text)
+        chunks = text_splitter.split_text(all_text)
         
         embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
         st.session_state.vector_store = FAISS.from_texts(chunks, embeddings)
-        st.toast("Document Indexed Successfully!", icon="✅")
+        st.toast(f"Indexed {len(uploaded_files)} Documents Successfully!", icon="✅")
 
-# 2. Display Chat History
+# Display Chat
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 3. Handle User Input
+# Handle Input
 if st.session_state.vector_store:
-    if prompt := st.chat_input("Ask a question about your document..."):
+    if prompt := st.chat_input("Ask a question about your documents..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
+                # Updated k=10 for deeper search
                 docs = st.session_state.vector_store.similarity_search(prompt, k=10)
                 context = "\n\n".join([doc.page_content for doc in docs])
                 
-                # ... inside the "if st.session_state.vector_store:" block ...
-                
-                # NEW STRICT PROMPT
+                # Strict Prompt
                 rag_prompt = f"""You are a strict Technical Auditor. 
                 Your job is to answer the QUESTION based ONLY on the provided CONTEXT.
                 
@@ -140,7 +144,7 @@ if st.session_state.vector_store:
                 2. Do not merge separate topics.
                 3. If the answer is not in the context, say "I cannot find this information."
                 4. Answer in bullet points.
-                5. DO NOT expand acronyms (e.g., do not change "DA" to "Died in Service") unless the definition is explicitly written in the text. Keep them as acronyms if unsure.
+                5. DO NOT expand acronyms (e.g., do not change "DA" to "Died in Service") unless explicitly written.
                 
                 CONTEXT:
                 {context}
@@ -148,7 +152,6 @@ if st.session_state.vector_store:
                 QUESTION: 
                 {prompt}
                 """
-                # ... rest of the code ...
                 
                 try:
                     if mode == "☁️ Cloud (Speed)":
@@ -172,4 +175,4 @@ if st.session_state.vector_store:
                 except Exception as e:
                     st.error(f"Error: {str(e)}")
 else:
-    st.info("👆 Please upload a PDF document to start chatting.")
+    st.info("👆 Upload PDF(s) to start. You can select multiple files at once.")
