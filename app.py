@@ -7,9 +7,15 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from pypdf import PdfReader
+from docx import Document
+from io import BytesIO
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="PhD Research Assistant", page_icon="🎓", layout="wide")
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+if "vector_store" not in st.session_state:
+    st.session_state.vector_store = None
 
 # --- CUSTOM CSS ---
 st.markdown("""
@@ -22,29 +28,38 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
+def create_docx(messages):
+    doc = Document()
+    doc.add_heading('PhD Research Session', 0)
+    
+    for msg in messages:
+        # Clean up the role name (e.g., "user" -> "You", "assistant" -> "AI")
+        role = "You" if msg["role"] == "user" else "AI Researcher"
+        doc.add_heading(role, level=2)
+        doc.add_paragraph(msg["content"])
+        doc.add_paragraph("-" * 20) # Divider
+    # Save to a memory buffer (not a file on disk)
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
+# --- SIDEBAR CONFIG ---
+# --- SIDEBAR CONFIG ---
 # --- SIDEBAR CONFIG ---
 with st.sidebar:
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
-        # Note: If 'profile.png' isn't found on Cloud, this might show a broken image. 
-        # Ensure you upload the image to GitHub too!
         if os.path.exists("profile.png"):
             st.image("profile.png", width=100) 
     
     st.title("Settings")
     st.write("Built by **Rohit Goswami**") 
     
-    # --- INTELLIGENT MODE DETECTION ---
+    # Mode Selection (Mac vs Cloud)
     os_name = platform.system()
-    
-    # Default options
     mode_options = ["☁️ Cloud (Speed)"]
-    
-    # If we are on Mac ("Darwin"), we add the Local option.
     if os_name == "Darwin":
         mode_options.insert(0, "🔒 Local (Privacy)")
-    
     mode = st.radio("Processing Mode:", mode_options)
     
     if mode == "☁️ Cloud (Speed)":
@@ -52,20 +67,32 @@ with st.sidebar:
         st.caption("[Get Key](https://console.groq.com/keys)")
         model_id = "llama-3.3-70b-versatile" 
     else:
-        # This part only runs on your Mac
         model_id = st.selectbox("Local Model:", ["llama3.2", "deepseek-r1"], index=0)
         st.info("Mode: 100% Private (Runs on your Mac)")
     
     st.divider()
+    
+    # BUTTON 1: Clear Memory (Resets the chat)
+    if st.button("🗑️ Clear Chat History"):
+        st.session_state.messages = []
+        st.session_state.vector_store = None
+        st.rerun()
+
+    # BUTTON 2: Download Report (Saves the chat)
+    if st.session_state.messages:
+        docx_file = create_docx(st.session_state.messages)
+        st.download_button(
+            label="📥 Download Report",
+            data=docx_file,
+            file_name="research_session.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
 
 # --- APP LOGIC ---
 st.title("🎓 Private PhD Assistant")
 st.markdown("##### Upload your thesis, manuals, or papers and chat with them.")
 
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "vector_store" not in st.session_state:
-    st.session_state.vector_store = None
+
 
 # 1. File Upload
 uploaded_file = st.file_uploader("Upload PDF", type="pdf", label_visibility="collapsed")
