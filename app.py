@@ -11,7 +11,7 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from pypdf import PdfReader
 
 # --- PAGE CONFIG ---
-st.set_page_config(page_title="PhD Research Assistant", page_icon="🎓", layout="wide")
+st.set_page_config(page_title="Sarkari Decoder", page_icon="🇮🇳", layout="wide")
 
 # --- CUSTOM CSS ---
 st.markdown("""
@@ -89,8 +89,8 @@ with st.sidebar:
         )
 
 # --- 4. APP LOGIC ---
-st.title("🎓 Private PhD Assistant")
-st.markdown("##### Upload multiple thesis chapters, papers, or manuals.")
+st.title("🇮🇳 Sarkari Decoder") 
+st.caption("Upload confusing Govt. Notices, Circulars & Gazettes. Get simple explanations in seconds.")
 
 # UPDATED: Accept Multiple Files
 uploaded_files = st.file_uploader(
@@ -136,15 +136,14 @@ if st.session_state.vector_store:
                 context = "\n\n".join([doc.page_content for doc in docs])
                 
                 # Strict Prompt
-                rag_prompt = f"""You are a strict Technical Auditor. 
-                Your job is to answer the QUESTION based ONLY on the provided CONTEXT.
+                rag_prompt = f"""You are a helpful Government Document Simplifier. 
+                Your job is to explain the confusing government circular/rule to the user in SIMPLE terms.
                 
                 RULES:
-                1. Do not hallucinate or make up information.
-                2. Do not merge separate topics.
-                3. If the answer is not in the context, say "I cannot find this information."
-                4. Answer in bullet points.
-                5. DO NOT expand acronyms (e.g., do not change "DA" to "Died in Service") unless explicitly written.
+                1. Use simple, easy-to-understand English.
+                2. If there are dates or deadlines, list them clearly.
+                3. If there are fees, bold them.
+                4. Do not use complex jargon.
                 
                 CONTEXT:
                 {context}
